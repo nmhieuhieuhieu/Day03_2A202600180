@@ -6,39 +6,44 @@ from ddgs import DDGS
 
 
 ddgs = DDGS()
+
 def web_search(query: str) -> str:
-    """Search the web using Brave Search API. Returns top 3 snippets."""
-    res = ddgs.text(query, max_results=5)
-    return "\n".join(t['body'] for t in res)
+    """Search the web. Tries Brave Search first, falls back to DuckDuckGo."""
+    # Sanitize query — remove quotes to prevent Brave phrase-search failure (Bug #3 fix)
+    query = query.strip().strip("\"'").replace('"', '').replace("'", '')
+
     api_key = os.getenv("BRAVE_API_KEY")
-    if not api_key:
-        return "Error: BRAVE_API_KEY not set in .env"
-    
-    url = "https://api.search.brave.com/res/v1/web/search"
-    headers = {
-        "Accept": "application/json",
-        "Accept-Encoding": "gzip",
-        "X-Subscription-Token": api_key,
-    }
-    params = {"q": query, "count": 3}
-    
+    if api_key:
+        url = "https://api.search.brave.com/res/v1/web/search"
+        headers = {
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip",
+            "X-Subscription-Token": api_key,
+        }
+        params = {"q": query, "count": 3}
+        try:
+            resp = requests.get(url, headers=headers, params=params, timeout=10)
+            resp.raise_for_status()
+            data = resp.json()
+            results = []
+            for item in data.get("web", {}).get("results", [])[:3]:
+                title = item.get("title", "")
+                snippet = item.get("description", "")
+                results.append(f"- {title}: {snippet}")
+            if results:
+                return "\n".join(results)
+        except requests.RequestException:
+            pass  # Fall through to DuckDuckGo
+
+    # Fallback: DuckDuckGo
     try:
-        resp = requests.get(url, headers=headers, params=params, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-    
-        results = []
-        for item in data.get("web", {}).get("results", [])[:3]:
-            title = item.get("title", "")
-            snippet = item.get("description", "")
-            results.append(f"- {title}: {snippet}")
-    
-        if not results:
-            return "No results found."
-        return "\n".join(results)
-    
-    except requests.RequestException as e:
-        return f"Search error: {str(e)}"
+        res = ddgs.text(query, max_results=5)
+        if res:
+            return "\n".join(t['body'] for t in res)
+    except Exception:
+        pass
+
+    return "No results found."
 
 
 def calculator(expression: str) -> str:
@@ -88,7 +93,7 @@ def wikipedia_search(query: str) -> str:
 
         results = search_data.get("query", {}).get("search", [])
         if not results:
-            return f"Observation: No Wikipedia results found for '{query}'."
+            return f"No Wikipedia results found for '{query}'."
 
         best_title = results[0]["title"]
 
@@ -102,7 +107,6 @@ def wikipedia_search(query: str) -> str:
             "titles": best_title,
         }
 
-        # ADDED: Pass the headers to the second GET request as well
         extract_response = requests.get(
             url, headers=headers, params=extract_params, timeout=5
         )
@@ -112,16 +116,16 @@ def wikipedia_search(query: str) -> str:
         pages = extract_data.get("query", {}).get("pages", {})
         for page_id, page_info in pages.items():
             if page_id == "-1":
-                return f"Observation: Could not retrieve summary for '{best_title}'."
+                return f"Could not retrieve summary for '{best_title}'."
 
             extract = page_info.get("extract", "").strip()
             extract_clean = extract.replace("\n", " ")
-            return f"Observation: [Page: {best_title}] {extract_clean}"
+            return f"[Page: {best_title}] {extract_clean}"
 
     except requests.exceptions.RequestException as e:
-        return f"Observation: Error connecting to Wikipedia API: {str(e)}"
+        return f"Error connecting to Wikipedia API: {str(e)}"
 
-    return "Observation: Unknown error occurred during Wikipedia search."
+    return "Unknown error occurred during Wikipedia search."
 
 # Tool registry
 TOOLS = [

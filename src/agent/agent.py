@@ -103,7 +103,7 @@ class ReActAgent:
             action_match = re.search(r"Action:\s*(\w+)\[([^\]]*)\]", content)
             if action_match:
                 tool_name = action_match.group(1)
-                tool_args = action_match.group(2).strip().strip("\"'")
+                tool_args = action_match.group(2).strip().strip("\"'").replace('"', '').replace("'", '')
 
                 # Print thought if present
                 thought_match = re.search(
@@ -192,6 +192,7 @@ def main():
         llm=OpenAIProvider(model_name=model_name, api_key=api_key),
         tools=TOOLS,
     )
+    react_agent.tool_executor = execute_tool
 
     react_agent.run(
         "Tôi muốn đi du lịch Đà Nẵng vào cuối tuần này. Hãy giúp tôi lên kế hoạch chi tiết, bao gồm dự báo thời tiết, gợi ý khách sạn, và những địa điểm ăn uống nổi tiếng. Tôi cũng muốn biết tổng chi phí ước tính cho chuyến đi này."
