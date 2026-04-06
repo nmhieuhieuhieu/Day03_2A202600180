@@ -1,0 +1,4 @@
+Tool define :
++search_realtime_airline_info - tìm kiếm giá vé máy bay Hà Nội - Đà Nẵng theo thời gian thực
++search_realtime_weather_info - tìm kiếm thông tin về thời tiết thời gian thực tại Đà Nẵng
++search_realtime_hotel_price_info - tìm kiếm thông tin về giá khách sạn tại Đà Nẵng theo thời gian thực
