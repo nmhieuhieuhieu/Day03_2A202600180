@@ -89,7 +89,6 @@ TOOLS = [
     },
 ]
 
-
 def execute_tool(tool_name: str, args: str) -> str:
     """Execute a tool by name with the given arguments."""
     for tool in TOOLS:
