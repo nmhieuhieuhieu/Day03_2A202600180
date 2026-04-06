@@ -8,6 +8,7 @@ from src.core.openai_provider import OpenAIProvider
 from src.telemetry.logger import logger
 from src.telemetry.metrics import tracker
 from src.tools.tools import TOOLS, execute_tool
+from pathlib import Path
 
 
 class ReActAgent:
@@ -16,7 +17,10 @@ class ReActAgent:
     """
 
     def __init__(
-        self, llm: LLMProvider, tools: List[Dict[str, Any]], max_steps: int = 7
+        self,
+        llm: LLMProvider,
+        tools: List[Dict[str, Any]],
+        max_steps: int = 7,
     ):
         self.llm = llm
         self.tools = tools
@@ -29,35 +33,14 @@ class ReActAgent:
         tool_descriptions = "\n".join(
             [f"- {t['name']}: {t['description']}" for t in self.tools]
         )
-        return f"""You are TravelWise, an expert Vietnamese travel assistant.
-                You help users plan trips with real-time data by using tools.
-
-                Current date: {current_date}
-
-                Available tools:
-                {tool_descriptions}
-
-                You MUST follow this exact format for every step:
-
-                Thought: <your reasoning about what to do next>
-                Action: tool_name[argument]
-                Observation: <you will see the tool result here>
-
-                You can repeat Thought/Action/Observation multiple times.
-                When you have enough information, respond with:
-
-                Thought: I now have all the information needed.
-                Final Answer: <your complete answer in Vietnamese, formatted in Markdown>
-
-                IMPORTANT RULES:
-                - Always start with a Thought before any Action.
-                - Use EXACTLY the format Action: tool_name[argument] with square brackets.
-                - Do NOT make up information. Only use data from tool observations.
-                - If a search returns no useful result, try a different query.
-                - Answer in Vietnamese.
-                - Whenever you are presented with a calculation, never do it yourself. Instead, generate the calculation formula using parentheses, numbers, and operators, and use the calculator tool to compute the result.
-
-                """
+        return (
+            Path("src/prompts/ReAct.v2.txt")
+            .read_text()
+            .format(
+                current_date=current_date,
+                tool_descriptions=tool_descriptions,
+            )
+        )
 
     def run(self, user_input: str) -> str:
         logger.log_event(
@@ -89,15 +72,18 @@ class ReActAgent:
             )
 
             latency = result.get("latency_ms", 0)
-            print(f"\n{'─'*50}")
+            print(f"\n{'─' * 50}")
             print(f"  STEP {steps + 1}  ({latency}ms)")
-            print(f"{'─'*50}")
+            print(f"{'─' * 50}")
 
-            logger.log_event("AGENT_STEP", {
-                "step": steps + 1,
-                "raw_output": content[:500],  # truncate for log
-                "latency_ms": latency,
-            })
+            logger.log_event(
+                "AGENT_STEP",
+                {
+                    "step": steps + 1,
+                    "raw_output": content[:500],  # truncate for log
+                    "latency_ms": latency,
+                },
+            )
 
             # Check for Final Answer
             final_match = re.search(r"Final Answer:\s*(.*)", content, re.DOTALL)
@@ -105,7 +91,9 @@ class ReActAgent:
                 final_answer = final_match.group(1).strip()
                 prompt_parts.append(content)
                 # Print thought before final answer if present
-                thought_match = re.search(r"Thought:\s*(.*?)(?=Final Answer:)", content, re.DOTALL)
+                thought_match = re.search(
+                    r"Thought:\s*(.*?)(?=Final Answer:)", content, re.DOTALL
+                )
                 if thought_match:
                     print(f"  Thought: {thought_match.group(1).strip()}")
                 print(f"  >> Final Answer found")
@@ -115,10 +103,12 @@ class ReActAgent:
             action_match = re.search(r"Action:\s*(\w+)\[([^\]]*)\]", content)
             if action_match:
                 tool_name = action_match.group(1)
-                tool_args = action_match.group(2).strip().strip('"\'')
+                tool_args = action_match.group(2).strip().strip("\"'")
 
                 # Print thought if present
-                thought_match = re.search(r"Thought:\s*(.*?)(?=Action:)", content, re.DOTALL)
+                thought_match = re.search(
+                    r"Thought:\s*(.*?)(?=Action:)", content, re.DOTALL
+                )
                 if thought_match:
                     print(f"  Thought: {thought_match.group(1).strip()}")
 
@@ -134,24 +124,30 @@ class ReActAgent:
                 for line in observation.splitlines():
                     print(f"     {line}")
 
-                logger.log_event("TOOL_RESULT", {
-                    "tool": tool_name,
-                    "result": observation[:300],  # truncate for log
-                })
+                logger.log_event(
+                    "TOOL_RESULT",
+                    {
+                        "tool": tool_name,
+                        "result": observation[:300],  # truncate for log
+                    },
+                )
 
                 # Append everything up to Action, then add Observation
                 # Only keep up to the Action line from LLM output
-                action_end = content[:action_match.end()]
+                action_end = content[: action_match.end()]
                 prompt_parts.append(action_end + f"\nObservation: {observation}\n\n")
             else:
                 # No Action and no Final Answer — LLM might be confused
                 print(f"  !! Parse error: No Action or Final Answer found")
                 print(f"     Output preview: {content[:200]}")
-                logger.log_event("PARSE_ERROR", {
-                    "step": steps + 1,
-                    "reason": "No Action or Final Answer found",
-                    "output": content[:300],
-                })
+                logger.log_event(
+                    "PARSE_ERROR",
+                    {
+                        "step": steps + 1,
+                        "reason": "No Action or Final Answer found",
+                        "output": content[:300],
+                    },
+                )
                 # Nudge the agent to follow the format
                 prompt_parts.append(
                     content
@@ -188,7 +184,9 @@ def main():
     api_key = os.getenv("OPENAI_API_KEY")
 
     if not api_key:
-        raise ValueError("OPENAI_API_KEY is not set. Please configure it in your environment or .env file.")
+        raise ValueError(
+            "OPENAI_API_KEY is not set. Please configure it in your environment or .env file."
+        )
 
     react_agent = ReActAgent(
         llm=OpenAIProvider(model_name=model_name, api_key=api_key),
